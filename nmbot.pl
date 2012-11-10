@@ -54,10 +54,8 @@ my %stages = (
 Irssi::settings_add_str('nmbot', 'nmbot_json', 'https://nm.debian.org/public/stats/latest?days=30&json=true');
 Irssi::settings_add_str('nmbot', 'nmbot_channel', '#debian-newmaint');
 Irssi::settings_add_str('nmbot', 'nmbot_last_announce', '0');
-Irssi::timeout_add(300000, 'updateTopic','');	#Run updateTopic() every 5 minutes
-Irssi::timeout_add(60000, 'announce','');	#Run announce() every 1 minute
-updateTopic();
-announce();
+Irssi::timeout_add(60000, 'main','');	#Run main() every 1 minute
+main();
 
 sub getJson {
 	my $url = Irssi::settings_get_str('nmbot_json');
@@ -96,7 +94,7 @@ sub getTopicFromJson {
 }
 
 sub updateTopic {
-	my $json = getJson();
+	my $json = shift;
 	my $newTopic = getTopicFromJson($json);
 	my $topic = getTopic();
 	Irssi::print("Old Topic: $topic")	if($debug);
@@ -112,16 +110,16 @@ sub updateTopic {
 }
 
 sub announce {
-	my $json = getJson();
+	my $json = shift;
 	my($server) = Irssi::server_find_tag('oftc');
 	my($channel) = Irssi::settings_get_str('nmbot_channel');
 	foreach my $event (@{$json->{'events'}}) {
 		if($event->{'status_changed_ts'} > Irssi::settings_get_str('nmbot_last_announce')) {
 			if($event->{'type'} eq "status") {
-				$server->command("MSG $channel " . $event->{'fn'} . " (" . $event->{'key'} . ") Status changed to " . $roles{$event->{'status'}});
+				$server->command("MSG $channel " . $event->{'fn'} . " (" . $event->{'key'} . ") Status changed to: " . $roles{$event->{'status'}});
 			}
 			elsif($event->{'type'} eq "progress") {
-				$server->command("MSG $channel " . $event->{'fn'} . " (" . $event->{'key'} . ") Progress changed to " . $stages{$event->{'progress'}});
+				$server->command("MSG $channel " . $event->{'fn'} . " (" . $event->{'key'} . ") Progress changed to: " . $stages{$event->{'progress'}});
 			}
 			else {
 				Irssi::print("Unknown Type (" . $event->{'type'} . ") for " . $event->{'key'});
@@ -132,4 +130,10 @@ sub announce {
 		}
 	}
 	Irssi::settings_set_str('nmbot_last_announce', time);
+}
+
+sub main {
+	my $json = getJson();
+	announce($json);
+	updateTopic($json);
 }
