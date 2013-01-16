@@ -11,13 +11,13 @@ use Irssi;
 $VERSION = '0.01';
 %IRSSI = (
 	authors		=>	'Nathan Handler',
-	contact		=>	'nhandler@ubuntu.com',
+	contact		=>	'nhandler@debian.org',
 	name		=>	'NMBot',
 	description	=>	'NMBot updates the /topic and displays notifications related to the Debian NM Process',
 	license		=>	'GPLv3+',
 );
 
-my $debug = 0;
+my $debug = 1;	# Set to a true value (1) to print extra information within irssi
 
 my %roles = (
     'mm' => 'None',
@@ -50,27 +50,34 @@ my %stages = (
 	'cancelled' => 'Process has been canceled',
 );
 
-
 Irssi::settings_add_str('nmbot', 'nmbot_json', 'https://nm.debian.org/public/stats/latest?days=30&json=true');
 Irssi::settings_add_str('nmbot', 'nmbot_channel', '#debian-newmaint');
 Irssi::settings_add_str('nmbot', 'nmbot_last_announce', '0');
+Irssi::settings_add_str('nmbot', 'nmbot_topic_prefix', 'New nm.d.o up \o/ | NM := New Member | For packaging/sponsor questions, please join #debian-mentors | Queues: ');
+
 Irssi::timeout_add(60000, 'main','');	#Run main() every 1 minute
+
 main();
 
+# Downloads the JSON feed from nm.debian.org containing all of the data
+# Parameters: none
+# Returns the JSON file or nothing (if error)
 sub getJson {
 	my $url = Irssi::settings_get_str('nmbot_json');
     my $ua = LWP::UserAgent->new;
     $ua->timeout(10);
     $ua->env_proxy;
 	my $response = $ua->get("$url");
-    if ($response->is_success) {
-        return decode_json($response->decoded_content);
+    if ($response->is_success) {	# If we sucessfully downloaded the file...
+        return decode_json($response->decoded_content);		# Return the JSON decoded into a hash
     }
-    else {
-        Irssi::print("Failed to get $url: " . $response->status_line);
+    else {	# If we failed to download the file...
+        Irssi::print("Failed to get $url: " . $response->status_line);	# Display an error message
     }
 }
 
+# Parameter: $topic : A string that will be set as the new IRC channel topic
+# Returns nothing, just changes the channel topic
 sub setTopic {
 	my($topic) = @_;
 
@@ -79,6 +86,8 @@ sub setTopic {
 	$server->send_raw("TOPIC $channel :$topic");
 }
 
+# Get and return the IRC channel topic
+# Takes no parameters
 sub getTopic {
 	my($server) = Irssi::server_find_tag('oftc');
 	my($channel) = $server->channel_find(Irssi::settings_get_str('nmbot_channel'));;
@@ -87,16 +96,27 @@ sub getTopic {
 	return $topic;
 }
 
+# Parameter: $json : Decoded JSON hash
+# The JSON contains a field specifying what the IRC channel topic should be
+# Return that field as a string
 sub getTopicFromJson {
 	my($json) = @_;
 
 	return $json->{'irc_topic'};
 }
 
+# Parameter: $json : Decoded JSON hash
+# Checks if the current channel topic is set correctly
+# If it is not, we call setTopic() to set it
+# If it is, we do nothing
+# Returns nothing
 sub updateTopic {
 	my $json = shift;
 	my $newTopic = getTopicFromJson($json);
 	my $topic = getTopic();
+	my $prefix = Irssi::settings_get_str('nmbot_topic_prefix');
+	$topic = "$topic";
+	$newTopic = "$prefix$newTopic";
 	Irssi::print("Old Topic: $topic")	if($debug);
 	Irssi::print("New Topic: $newTopic")	if($debug);
 
@@ -109,6 +129,10 @@ sub updateTopic {
 	}
 }
 
+# Parameter: $json : Decoded JSON hash
+# Displays a message in the IRC channel for each event in the JSON file
+# Includes checks to prevent displaying the same event multiple times
+# Returns nothing
 sub announce {
 	my $json = shift;
 	my($server) = Irssi::server_find_tag('oftc');
@@ -132,6 +156,9 @@ sub announce {
 	Irssi::settings_set_str('nmbot_last_announce', time);
 }
 
+# Parameters: none
+# This function is automatically called every minute
+# Returns nothing
 sub main {
 	my $json = getJson();
 	announce($json);
